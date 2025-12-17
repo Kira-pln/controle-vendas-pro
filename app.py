@@ -70,12 +70,34 @@ CREATE TABLE IF NOT EXISTS vendas (
 conn.commit()
 
 # -------------------------------------------------
-# MENU (AGORA VISÍVEL NO MOBILE)
+# GARANTIR COLUNAS (EVITA KeyError)
+# -------------------------------------------------
+cur.execute("PRAGMA table_info(vendas)")
+colunas_existentes = [col[1] for col in cur.fetchall()]
+
+colunas_necessarias = {
+    "produto": "TEXT",
+    "quantidade": "INTEGER",
+    "preco": "REAL",
+    "percentual": "REAL",
+    "valor_receber": "REAL",
+    "metodo_pagamento": "TEXT",
+    "parcelas": "INTEGER",
+    "data": "TEXT"
+}
+
+for coluna, tipo in colunas_necessarias.items():
+    if coluna not in colunas_existentes:
+        cur.execute(f"ALTER TABLE vendas ADD COLUMN {coluna} {tipo}")
+
+conn.commit()
+
+# -------------------------------------------------
+# MENU
 # -------------------------------------------------
 pagina = st.radio(
     "Menu",
-    ["Cadastro de produtos", "Registrar venda", "Relatórios"],
-    horizontal=False
+    ["Cadastro de produtos", "Registrar venda", "Relatórios"]
 )
 
 st.divider()
@@ -91,19 +113,17 @@ if pagina == "Cadastro de produtos":
     descricao = st.text_input("Descrição do produto")
 
     if st.button("Cadastrar produto"):
-        if nome.strip() == "":
-            st.warning("Informe o nome do produto.")
-        else:
+        if nome.strip():
             cur.execute(
                 "INSERT INTO produtos (nome, descricao) VALUES (?, ?)",
                 (nome, descricao)
             )
             conn.commit()
             st.success("Produto cadastrado com sucesso.")
+        else:
+            st.warning("Informe o nome do produto.")
 
     produtos = pd.read_sql("SELECT * FROM produtos", conn)
-
-    st.subheader("Produtos cadastrados")
     st.dataframe(produtos, use_container_width=True)
 
     if not produtos.empty:
@@ -116,7 +136,6 @@ if pagina == "Cadastro de produtos":
         if st.button("Excluir produto"):
             cur.execute("DELETE FROM produtos WHERE id=?", (pid,))
             conn.commit()
-            st.success("Produto excluído.")
             st.rerun()
 
 # =================================================
@@ -138,11 +157,9 @@ elif pagina == "Registrar venda":
 
         metodo_pagamento = st.radio("Método de pagamento", ["Pix", "Cartão"])
 
+        parcelas = 1
         if metodo_pagamento == "Cartão":
             parcelas = st.number_input("Parcelas", min_value=1, step=1)
-        else:
-            parcelas = 1
-            st.info("Pix — pagamento à vista")
 
         data_venda = st.date_input("Data", value=date.today())
 
@@ -180,9 +197,8 @@ elif pagina == "Relatórios":
     if vendas.empty:
         st.warning("Nenhuma venda registrada.")
     else:
-        vendas["data"] = pd.to_datetime(vendas["data"])
+        vendas["data"] = pd.to_datetime(vendas["data"], errors="coerce")
 
-        total_qtd = vendas["quantidade"].sum()
         total_vendido = (vendas["quantidade"] * vendas["preco"]).sum()
         total_receber = vendas["valor_receber"].sum()
 
@@ -191,25 +207,22 @@ elif pagina == "Relatórios":
         **Valor a receber:** R$ {total_receber:.2f}
         """)
 
-        st.dataframe(
-            vendas[[
-                "produto",
-                "quantidade",
-                "preco",
-                "metodo_pagamento",
-                "parcelas",
-                "valor_receber",
-                "data"
-            ]],
-            use_container_width=True
-        )
+        colunas_exibir = [
+            "produto",
+            "quantidade",
+            "preco",
+            "metodo_pagamento",
+            "parcelas",
+            "valor_receber",
+            "data"
+        ]
+
+        st.dataframe(vendas[colunas_exibir], use_container_width=True)
 
         vid = st.selectbox("Excluir venda", vendas["id"])
-
         if st.button("Excluir venda"):
             cur.execute("DELETE FROM vendas WHERE id=?", (vid,))
             conn.commit()
-            st.success("Venda excluída.")
             st.rerun()
 
         buffer = io.BytesIO()
