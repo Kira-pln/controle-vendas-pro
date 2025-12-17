@@ -5,7 +5,7 @@ from datetime import date
 import io
 
 # -------------------------------------------------
-# CONFIGURAÇÃO (MOBILE-FIRST)
+# CONFIGURAÇÃO
 # -------------------------------------------------
 st.set_page_config(
     page_title="Inova Eletro Móveis",
@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # -------------------------------------------------
-# ESTILO E TÍTULO FIXO
+# ESTILO + TÍTULO FIXO
 # -------------------------------------------------
 st.markdown("""
 <style>
@@ -32,7 +32,7 @@ header {visibility: hidden;}
     z-index: 1000;
 }
 .block-container {
-    padding-top: 80px;
+    padding-top: 90px;
 }
 </style>
 
@@ -40,14 +40,11 @@ header {visibility: hidden;}
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------
-# CONEXÃO COM BANCO
+# BANCO DE DADOS
 # -------------------------------------------------
 conn = sqlite3.connect("vendas.db", check_same_thread=False)
 cur = conn.cursor()
 
-# -------------------------------------------------
-# TABELAS
-# -------------------------------------------------
 cur.execute("""
 CREATE TABLE IF NOT EXISTS produtos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,20 +70,22 @@ CREATE TABLE IF NOT EXISTS vendas (
 conn.commit()
 
 # -------------------------------------------------
-# MENU
+# MENU (AGORA VISÍVEL NO MOBILE)
 # -------------------------------------------------
-st.sidebar.title("Menu")
-pagina = st.sidebar.radio(
-    "Navegação",
-    ["Cadastro de produtos", "Registrar venda", "Relatórios"]
+pagina = st.radio(
+    "Menu",
+    ["Cadastro de produtos", "Registrar venda", "Relatórios"],
+    horizontal=False
 )
+
+st.divider()
 
 # =================================================
 # CADASTRO DE PRODUTOS
 # =================================================
 if pagina == "Cadastro de produtos":
 
-    st.title("Cadastro de produtos")
+    st.subheader("Cadastro de produtos")
 
     nome = st.text_input("Nome do produto")
     descricao = st.text_input("Descrição do produto")
@@ -108,9 +107,8 @@ if pagina == "Cadastro de produtos":
     st.dataframe(produtos, use_container_width=True)
 
     if not produtos.empty:
-        st.subheader("Excluir produto")
         pid = st.selectbox(
-            "Selecione o produto",
+            "Excluir produto",
             produtos["id"],
             format_func=lambda x: produtos.loc[produtos["id"] == x, "nome"].values[0]
         )
@@ -126,7 +124,7 @@ if pagina == "Cadastro de produtos":
 # =================================================
 elif pagina == "Registrar venda":
 
-    st.title("Registrar venda")
+    st.subheader("Registrar venda")
 
     produtos = pd.read_sql("SELECT nome FROM produtos", conn)
 
@@ -134,25 +132,21 @@ elif pagina == "Registrar venda":
         st.warning("Cadastre produtos antes de registrar vendas.")
     else:
         produto = st.selectbox("Produto", produtos["nome"])
-        quantidade = st.number_input("Quantidade vendida", min_value=1, step=1)
-        preco = st.number_input("Preço de venda (R$)", min_value=0.0, step=0.01)
+        quantidade = st.number_input("Quantidade", min_value=1, step=1)
+        preco = st.number_input("Preço (R$)", min_value=0.0, step=0.01)
         percentual = st.number_input("Percentual a receber (%)", min_value=0.0, step=0.1)
 
-        metodo_pagamento = st.radio(
-            "Método de pagamento",
-            ["Pix", "Cartão"]
-        )
+        metodo_pagamento = st.radio("Método de pagamento", ["Pix", "Cartão"])
 
         if metodo_pagamento == "Cartão":
-            parcelas = st.number_input("Número de parcelas", min_value=1, step=1)
+            parcelas = st.number_input("Parcelas", min_value=1, step=1)
         else:
             parcelas = 1
-            st.info("Pagamento via Pix (1 parcela)")
+            st.info("Pix — pagamento à vista")
 
-        data_venda = st.date_input("Data da venda", value=date.today())
+        data_venda = st.date_input("Data", value=date.today())
 
         valor_receber = quantidade * preco * (percentual / 100)
-
         st.info(f"Valor a receber: R$ {valor_receber:.2f}")
 
         if st.button("Registrar venda"):
@@ -179,7 +173,7 @@ elif pagina == "Registrar venda":
 # =================================================
 elif pagina == "Relatórios":
 
-    st.title("Relatório de vendas")
+    st.subheader("Relatório de vendas")
 
     vendas = pd.read_sql("SELECT * FROM vendas", conn)
 
@@ -188,43 +182,15 @@ elif pagina == "Relatórios":
     else:
         vendas["data"] = pd.to_datetime(vendas["data"])
 
-        produto_filtro = st.multiselect(
-            "Filtrar por produto",
-            vendas["produto"].unique()
-        )
-
-        metodo_filtro = st.multiselect(
-            "Filtrar por método de pagamento",
-            vendas["metodo_pagamento"].unique()
-        )
-
-        data_ini, data_fim = st.date_input(
-            "Filtrar por período",
-            [vendas["data"].min(), vendas["data"].max()]
-        )
-
-        if produto_filtro:
-            vendas = vendas[vendas["produto"].isin(produto_filtro)]
-
-        if metodo_filtro:
-            vendas = vendas[vendas["metodo_pagamento"].isin(metodo_filtro)]
-
-        vendas = vendas[
-            (vendas["data"] >= pd.to_datetime(data_ini)) &
-            (vendas["data"] <= pd.to_datetime(data_fim))
-        ]
-
         total_qtd = vendas["quantidade"].sum()
         total_vendido = (vendas["quantidade"] * vendas["preco"]).sum()
         total_receber = vendas["valor_receber"].sum()
 
         st.markdown(f"""
-        **Total de produtos vendidos:** {total_qtd}  
-        **Valor total vendido:** R$ {total_vendido:.2f}  
-        **Valor total a receber:** R$ {total_receber:.2f}
+        **Total vendido:** R$ {total_vendido:.2f}  
+        **Valor a receber:** R$ {total_receber:.2f}
         """)
 
-        st.subheader("Lista de vendas")
         st.dataframe(
             vendas[[
                 "produto",
@@ -238,8 +204,7 @@ elif pagina == "Relatórios":
             use_container_width=True
         )
 
-        st.subheader("Excluir venda")
-        vid = st.selectbox("Selecione a venda", vendas["id"])
+        vid = st.selectbox("Excluir venda", vendas["id"])
 
         if st.button("Excluir venda"):
             cur.execute("DELETE FROM vendas WHERE id=?", (vid,))
@@ -252,7 +217,7 @@ elif pagina == "Relatórios":
             vendas.to_excel(writer, index=False)
 
         st.download_button(
-            "Exportar relatório para Excel",
+            "Exportar para Excel",
             buffer,
             "relatorio_vendas.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
