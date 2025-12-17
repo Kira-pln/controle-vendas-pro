@@ -8,9 +8,36 @@ import io
 # CONFIGURAÇÃO (MOBILE-FIRST)
 # -------------------------------------------------
 st.set_page_config(
-    page_title="Controle de Vendas",
+    page_title="Inova Eletro Móveis",
     layout="centered"
 )
+
+# -------------------------------------------------
+# ESTILO E TÍTULO FIXO
+# -------------------------------------------------
+st.markdown("""
+<style>
+header {visibility: hidden;}
+.main-title {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background-color: #111827;
+    color: white;
+    text-align: center;
+    padding: 12px;
+    font-size: 22px;
+    font-weight: 600;
+    z-index: 1000;
+}
+.block-container {
+    padding-top: 80px;
+}
+</style>
+
+<div class="main-title">Inova Eletro Móveis</div>
+""", unsafe_allow_html=True)
 
 # -------------------------------------------------
 # CONEXÃO COM BANCO
@@ -37,6 +64,8 @@ CREATE TABLE IF NOT EXISTS vendas (
     preco REAL,
     percentual REAL,
     valor_receber REAL,
+    metodo_pagamento TEXT,
+    parcelas INTEGER,
     data TEXT
 )
 """)
@@ -108,6 +137,18 @@ elif pagina == "Registrar venda":
         quantidade = st.number_input("Quantidade vendida", min_value=1, step=1)
         preco = st.number_input("Preço de venda (R$)", min_value=0.0, step=0.01)
         percentual = st.number_input("Percentual a receber (%)", min_value=0.0, step=0.1)
+
+        metodo_pagamento = st.radio(
+            "Método de pagamento",
+            ["Pix", "Cartão"]
+        )
+
+        if metodo_pagamento == "Cartão":
+            parcelas = st.number_input("Número de parcelas", min_value=1, step=1)
+        else:
+            parcelas = 1
+            st.info("Pagamento via Pix (1 parcela)")
+
         data_venda = st.date_input("Data da venda", value=date.today())
 
         valor_receber = quantidade * preco * (percentual / 100)
@@ -117,21 +158,24 @@ elif pagina == "Registrar venda":
         if st.button("Registrar venda"):
             cur.execute("""
                 INSERT INTO vendas
-                (produto, quantidade, preco, percentual, valor_receber, data)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (produto, quantidade, preco, percentual, valor_receber,
+                 metodo_pagamento, parcelas, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 produto,
                 quantidade,
                 preco,
                 percentual,
                 valor_receber,
+                metodo_pagamento,
+                parcelas,
                 data_venda.isoformat()
             ))
             conn.commit()
             st.success("Venda registrada com sucesso.")
 
 # =================================================
-# RELATÓRIOS (SEM GRÁFICOS)
+# RELATÓRIOS
 # =================================================
 elif pagina == "Relatórios":
 
@@ -149,6 +193,11 @@ elif pagina == "Relatórios":
             vendas["produto"].unique()
         )
 
+        metodo_filtro = st.multiselect(
+            "Filtrar por método de pagamento",
+            vendas["metodo_pagamento"].unique()
+        )
+
         data_ini, data_fim = st.date_input(
             "Filtrar por período",
             [vendas["data"].min(), vendas["data"].max()]
@@ -156,6 +205,9 @@ elif pagina == "Relatórios":
 
         if produto_filtro:
             vendas = vendas[vendas["produto"].isin(produto_filtro)]
+
+        if metodo_filtro:
+            vendas = vendas[vendas["metodo_pagamento"].isin(metodo_filtro)]
 
         vendas = vendas[
             (vendas["data"] >= pd.to_datetime(data_ini)) &
@@ -178,6 +230,8 @@ elif pagina == "Relatórios":
                 "produto",
                 "quantidade",
                 "preco",
+                "metodo_pagamento",
+                "parcelas",
                 "valor_receber",
                 "data"
             ]],
