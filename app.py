@@ -2,12 +2,10 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import date
-import plotly.express as px
 import io
-import hashlib
 
 # -------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA (MOBILE-FIRST)
+# CONFIGURAÇÃO (MOBILE-FIRST)
 # -------------------------------------------------
 st.set_page_config(
     page_title="Controle de Vendas",
@@ -15,29 +13,15 @@ st.set_page_config(
 )
 
 # -------------------------------------------------
-# FUNÇÕES AUXILIARES
+# CONEXÃO COM BANCO
 # -------------------------------------------------
-def hash_senha(senha):
-    return hashlib.sha256(senha.encode()).hexdigest()
-
-def conectar_db():
-    return sqlite3.connect("vendas.db", check_same_thread=False)
-
-conn = conectar_db()
-cursor = conn.cursor()
+conn = sqlite3.connect("vendas.db", check_same_thread=False)
+cur = conn.cursor()
 
 # -------------------------------------------------
-# CRIAÇÃO DAS TABELAS
+# TABELAS
 # -------------------------------------------------
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario TEXT UNIQUE,
-    senha TEXT
-)
-""")
-
-cursor.execute("""
+cur.execute("""
 CREATE TABLE IF NOT EXISTS produtos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT,
@@ -45,7 +29,7 @@ CREATE TABLE IF NOT EXISTS produtos (
 )
 """)
 
-cursor.execute("""
+cur.execute("""
 CREATE TABLE IF NOT EXISTS vendas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     produto TEXT,
@@ -60,57 +44,13 @@ CREATE TABLE IF NOT EXISTS vendas (
 conn.commit()
 
 # -------------------------------------------------
-# USUÁRIO PADRÃO (ADMIN)
-# -------------------------------------------------
-cursor.execute("SELECT * FROM usuarios WHERE usuario = 'admin'")
-if cursor.fetchone() is None:
-    cursor.execute(
-        "INSERT INTO usuarios (usuario, senha) VALUES (?, ?)",
-        ("admin", hash_senha("admin"))
-    )
-    conn.commit()
-
-# -------------------------------------------------
-# LOGIN
-# -------------------------------------------------
-if "logado" not in st.session_state:
-    st.session_state.logado = False
-
-if not st.session_state.logado:
-    st.title("Login")
-
-    usuario = st.text_input("Usuário")
-    senha = st.text_input("Senha", type="password")
-
-    if st.button("Entrar"):
-        cursor.execute(
-            "SELECT * FROM usuarios WHERE usuario = ? AND senha = ?",
-            (usuario, hash_senha(senha))
-        )
-        if cursor.fetchone():
-            st.session_state.logado = True
-            st.session_state.usuario = usuario
-            st.rerun()
-        else:
-            st.error("Usuário ou senha inválidos.")
-
-    st.stop()
-
-# -------------------------------------------------
 # MENU
 # -------------------------------------------------
 st.sidebar.title("Menu")
 pagina = st.sidebar.radio(
     "Navegação",
-    ["Cadastro de produtos", "Registrar venda", "Relatórios", "Sair"]
+    ["Cadastro de produtos", "Registrar venda", "Relatórios"]
 )
-
-# -------------------------------------------------
-# SAIR
-# -------------------------------------------------
-if pagina == "Sair":
-    st.session_state.logado = False
-    st.rerun()
 
 # =================================================
 # CADASTRO DE PRODUTOS
@@ -120,35 +60,34 @@ if pagina == "Cadastro de produtos":
     st.title("Cadastro de produtos")
 
     nome = st.text_input("Nome do produto")
-    descricao = st.text_input("Descrição")
+    descricao = st.text_input("Descrição do produto")
 
-    if st.button("Cadastrar"):
+    if st.button("Cadastrar produto"):
         if nome.strip() == "":
             st.warning("Informe o nome do produto.")
         else:
-            cursor.execute(
+            cur.execute(
                 "INSERT INTO produtos (nome, descricao) VALUES (?, ?)",
                 (nome, descricao)
             )
             conn.commit()
-            st.success("Produto cadastrado.")
+            st.success("Produto cadastrado com sucesso.")
 
     produtos = pd.read_sql("SELECT * FROM produtos", conn)
 
     st.subheader("Produtos cadastrados")
-    st.dataframe(produtos[["id", "nome", "descricao"]], use_container_width=True)
+    st.dataframe(produtos, use_container_width=True)
 
-    st.subheader("Excluir produto")
     if not produtos.empty:
-        produto_excluir = st.selectbox(
+        st.subheader("Excluir produto")
+        pid = st.selectbox(
             "Selecione o produto",
             produtos["id"],
             format_func=lambda x: produtos.loc[produtos["id"] == x, "nome"].values[0]
         )
 
         if st.button("Excluir produto"):
-            cursor.execute("DELETE FROM produtos WHERE id = ?", (produto_excluir,))
-            cursor.execute("DELETE FROM vendas WHERE produto = (SELECT nome FROM produtos WHERE id = ?)", (produto_excluir,))
+            cur.execute("DELETE FROM produtos WHERE id=?", (pid,))
             conn.commit()
             st.success("Produto excluído.")
             st.rerun()
@@ -163,21 +102,20 @@ elif pagina == "Registrar venda":
     produtos = pd.read_sql("SELECT nome FROM produtos", conn)
 
     if produtos.empty:
-        st.warning("Cadastre produtos antes.")
+        st.warning("Cadastre produtos antes de registrar vendas.")
     else:
         produto = st.selectbox("Produto", produtos["nome"])
-
-        quantidade = st.number_input("Quantidade", min_value=1, step=1)
+        quantidade = st.number_input("Quantidade vendida", min_value=1, step=1)
         preco = st.number_input("Preço de venda (R$)", min_value=0.0, step=0.01)
         percentual = st.number_input("Percentual a receber (%)", min_value=0.0, step=0.1)
-        data_venda = st.date_input("Data", value=date.today())
+        data_venda = st.date_input("Data da venda", value=date.today())
 
         valor_receber = quantidade * preco * (percentual / 100)
 
         st.info(f"Valor a receber: R$ {valor_receber:.2f}")
 
         if st.button("Registrar venda"):
-            cursor.execute("""
+            cur.execute("""
                 INSERT INTO vendas
                 (produto, quantidade, preco, percentual, valor_receber, data)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -190,14 +128,14 @@ elif pagina == "Registrar venda":
                 data_venda.isoformat()
             ))
             conn.commit()
-            st.success("Venda registrada.")
+            st.success("Venda registrada com sucesso.")
 
 # =================================================
-# RELATÓRIOS
+# RELATÓRIOS (SEM GRÁFICOS)
 # =================================================
 elif pagina == "Relatórios":
 
-    st.title("Relatórios")
+    st.title("Relatório de vendas")
 
     vendas = pd.read_sql("SELECT * FROM vendas", conn)
 
@@ -234,25 +172,23 @@ elif pagina == "Relatórios":
         **Valor total a receber:** R$ {total_receber:.2f}
         """)
 
-        grafico = px.bar(
-            vendas,
-            x="produto",
-            y="quantidade"
+        st.subheader("Lista de vendas")
+        st.dataframe(
+            vendas[[
+                "produto",
+                "quantidade",
+                "preco",
+                "valor_receber",
+                "data"
+            ]],
+            use_container_width=True
         )
-
-        st.plotly_chart(grafico, use_container_width=True)
-
-        st.subheader("Vendas registradas")
-        st.dataframe(vendas, use_container_width=True)
 
         st.subheader("Excluir venda")
-        venda_excluir = st.selectbox(
-            "Selecione a venda",
-            vendas["id"]
-        )
+        vid = st.selectbox("Selecione a venda", vendas["id"])
 
         if st.button("Excluir venda"):
-            cursor.execute("DELETE FROM vendas WHERE id = ?", (venda_excluir,))
+            cur.execute("DELETE FROM vendas WHERE id=?", (vid,))
             conn.commit()
             st.success("Venda excluída.")
             st.rerun()
@@ -262,9 +198,8 @@ elif pagina == "Relatórios":
             vendas.to_excel(writer, index=False)
 
         st.download_button(
-            "Exportar para Excel",
+            "Exportar relatório para Excel",
             buffer,
             "relatorio_vendas.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
